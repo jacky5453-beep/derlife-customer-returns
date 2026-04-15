@@ -105,9 +105,10 @@
             </div>
             <div class="flex items-center gap-2">
                 <label class="text-sm font-medium text-gray-600">期間：</label>
-                <select id="filterPeriod" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
-                    <option value="all">全部期間</option>
-                </select>
+                <input type="date" id="filterDateFrom" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                <span class="text-gray-400 text-sm">~</span>
+                <input type="date" id="filterDateTo" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                <button onclick="clearDateFilter()" class="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 text-gray-500">清除</button>
             </div>
             <span id="filterInfo" class="text-xs text-gray-400 ml-auto"></span>
         </div>
@@ -190,9 +191,13 @@
                                     <option value="緣味">緣味食品行</option>
                                 </select>
                             </div>
-                            <div class="flex-1 min-w-[140px]">
-                                <label class="text-xs font-medium text-gray-500 mb-1 block">期間標籤</label>
-                                <input type="text" id="importPeriod" placeholder="例如：2025年度、2025Q1" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+                            <div class="flex-1 min-w-[130px]">
+                                <label class="text-xs font-medium text-gray-500 mb-1 block">起始日期</label>
+                                <input type="date" id="importDateFrom" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+                            </div>
+                            <div class="flex-1 min-w-[130px]">
+                                <label class="text-xs font-medium text-gray-500 mb-1 block">結束日期</label>
+                                <input type="date" id="importDateTo" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
                             </div>
                         </div>
                         <!-- 拖曳區 -->
@@ -453,28 +458,46 @@ function updateFilterOptions() {
     compSel.innerHTML = '<option value="all">全部公司</option>' + companies.map(c => `<option value="${c}">${c}</option>`).join('');
     compSel.value = companies.includes(curComp) ? curComp : 'all';
 
-    const periods = [...new Set(allData.map(d => d.period).filter(Boolean))].sort();
-    const perSel = document.getElementById('filterPeriod');
-    const curPer = perSel.value;
-    perSel.innerHTML = '<option value="all">全部期間</option>' + periods.map(p => `<option value="${p}">${p}</option>`).join('');
-    perSel.value = periods.includes(curPer) ? curPer : 'all';
+    // 自動設定日期範圍（根據資料中最早/最晚的日期）
+    const fromInput = document.getElementById('filterDateFrom');
+    const toInput = document.getElementById('filterDateTo');
+    const allDates = allData.map(d => d.dateFrom || d.dateTo).filter(Boolean).sort();
+    if (allDates.length && !fromInput.value && !toInput.value) {
+        // 不自動填入，讓使用者手動選擇（空值代表全部）
+    }
 
     // 管理頁面下拉
     const delComp = document.getElementById('deleteCompany');
     if (delComp) delComp.innerHTML = '<option value="">選擇公司</option>' + companies.map(c => `<option value="${c}">${c}</option>`).join('');
+    // 期間下拉改為顯示所有匯入批次的日期區間
+    const periods = [...new Set(allData.map(d => d.period).filter(Boolean))].sort();
     const delPer = document.getElementById('deletePeriod');
     if (delPer) delPer.innerHTML = '<option value="">選擇期間</option>' + periods.map(p => `<option value="${p}">${p}</option>`).join('');
 }
 
+function clearDateFilter() {
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    applyFilters();
+}
+
 function applyFilters() {
     const comp = document.getElementById('filterCompany').value;
-    const per = document.getElementById('filterPeriod').value;
+    const dateFrom = document.getElementById('filterDateFrom').value; // yyyy-mm-dd 或空
+    const dateTo = document.getElementById('filterDateTo').value;
     filteredData = allData.filter(d => {
         if (comp !== 'all' && d.company !== comp) return false;
-        if (per !== 'all' && d.period !== per) return false;
+        // 日期區間篩選：比對資料的 dateFrom/dateTo 是否與篩選範圍重疊
+        if (dateFrom && d.dateTo && d.dateTo < dateFrom) return false;
+        if (dateTo && d.dateFrom && d.dateFrom > dateTo) return false;
         return true;
     });
-    document.getElementById('filterInfo').textContent = `篩選結果：${filteredData.length} 筆 / 共 ${allData.length} 筆`;
+    // 顯示篩選資訊
+    let info = `篩選結果：${filteredData.length} 筆 / 共 ${allData.length} 筆`;
+    if (dateFrom || dateTo) {
+        info += `（${dateFrom || '起始'} ~ ${dateTo || '至今'}）`;
+    }
+    document.getElementById('filterInfo').textContent = info;
     detailPage = 0;
     renderDashboard();
     renderDetailTable();
@@ -898,10 +921,11 @@ function processFile(file) {
                 document.getElementById('importCompany').value = '得來素';
             }
 
-            // 自動偵測期間
-            const dateMatch = detectedInfo.match(/(\d{4}\/\d{2}\/\d{2})\s*到\s*(\d{4}\/\d{2}\/\d{2})/);
+            // 自動偵測期間並填入日期欄位
+            const dateMatch = detectedInfo.match(/(\d{4})\/(\d{2})\/(\d{2})\s*到\s*(\d{4})\/(\d{2})\/(\d{2})/);
             if (dateMatch) {
-                document.getElementById('importPeriod').value = dateMatch[1].replace(/\//g, '.') + '~' + dateMatch[2].replace(/\//g, '.');
+                document.getElementById('importDateFrom').value = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+                document.getElementById('importDateTo').value = `${dateMatch[4]}-${dateMatch[5]}-${dateMatch[6]}`;
             }
 
             showPreview(dataRows, colMap, file.name, detectedInfo);
@@ -949,8 +973,11 @@ function cancelImport() {
 
 async function executeImport() {
     const company = document.getElementById('importCompany').value;
-    const period = document.getElementById('importPeriod').value.trim();
-    if (!period) { alert('請輸入期間標籤'); return; }
+    const dateFrom = document.getElementById('importDateFrom').value; // yyyy-mm-dd
+    const dateTo = document.getElementById('importDateTo').value;
+    if (!dateFrom || !dateTo) { alert('請選擇起始日期與結束日期'); return; }
+    // 產生期間標籤供顯示用
+    const period = `${dateFrom} ~ ${dateTo}`;
 
     const btn = document.getElementById('importBtn');
     btn.disabled = true;
@@ -971,10 +998,10 @@ async function executeImport() {
                 const record = {
                     ...row,
                     company, period, batchId,
+                    dateFrom, dateTo,
                     importDate: new Date().toISOString(),
                     importedBy: currentUser?.email || ''
                 };
-                // 使用公司+客戶名稱+batchId 作為 doc ID，避免重複
                 const docId = `${company}_${row.客戶名稱}_${batchId}`;
                 const ref = db.collection(COLLECTION).doc(docId);
                 batch.set(ref, record);
@@ -988,7 +1015,7 @@ async function executeImport() {
 
         // 儲存批次記錄
         await db.collection(BATCH_COLLECTION).doc(batchId).set({
-            batchId, company, period,
+            batchId, company, period, dateFrom, dateTo,
             date: new Date().toISOString(),
             totalRows: total, imported,
             fileName: document.getElementById('previewFileName').textContent,
