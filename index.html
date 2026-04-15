@@ -104,11 +104,30 @@
                 </select>
             </div>
             <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-gray-600">年度：</label>
+                <select id="filterYear" onchange="onYearMonthChange()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                    <option value="all">全部年度</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-gray-600">月份：</label>
+                <select id="filterMonth" onchange="onYearMonthChange()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                    <option value="all">全部月份</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
                 <label class="text-sm font-medium text-gray-600">期間：</label>
-                <input type="date" id="filterDateFrom" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                <input type="date" id="filterDateFrom" onchange="clearYearMonth();applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
                 <span class="text-gray-400 text-sm">~</span>
-                <input type="date" id="filterDateTo" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                <input type="date" id="filterDateTo" onchange="clearYearMonth();applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
                 <button onclick="clearDateFilter()" class="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 text-gray-500">清除</button>
+            </div>
+            <!-- 快捷按鈕 -->
+            <div class="flex items-center gap-1.5">
+                <button onclick="setQuickFilter('thisMonth')" class="quick-filter-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-brand-dark hover:text-brand hover:border-brand-dark text-gray-600 transition-colors">本月</button>
+                <button onclick="setQuickFilter('lastMonth')" class="quick-filter-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-brand-dark hover:text-brand hover:border-brand-dark text-gray-600 transition-colors">上月</button>
+                <button onclick="setQuickFilter('thisYear')" class="quick-filter-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-brand-dark hover:text-brand hover:border-brand-dark text-gray-600 transition-colors">本年度</button>
+                <button onclick="setQuickFilter('all')" class="quick-filter-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-brand-dark hover:text-brand hover:border-brand-dark text-gray-600 transition-colors">全部</button>
             </div>
             <span id="filterInfo" class="text-xs text-gray-400 ml-auto"></span>
         </div>
@@ -139,6 +158,13 @@
                     <div class="chart-container" style="height:300px"><canvas id="unpaidChart"></canvas></div>
                 </div>
             </div>
+            <!-- 月度趨勢分析 -->
+            <div id="monthlyTrendSection" class="bg-white rounded-xl border border-gray-200 p-5 mb-6 hidden">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">📈 月度趨勢分析</h3>
+                <div class="chart-container" style="height:350px"><canvas id="monthlyTrendChart"></canvas></div>
+                <!-- 月度彙總小卡 -->
+                <div id="monthlySummaryCards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-5"></div>
+            </div>
             <!-- 公司對比 -->
             <div id="compareSection" class="bg-white rounded-xl border border-gray-200 p-5 hidden">
                 <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">公司關鍵指標對比</h3>
@@ -160,6 +186,7 @@
                         <option value="退貨金額">依退貨金額排序</option>
                         <option value="未清金額">依未清金額排序</option>
                         <option value="退貨率">依退貨率排序</option>
+                        <option value="年月">依年月排序</option>
                     </select>
                     <button onclick="exportCSV()" class="text-sm px-4 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium">⬇ 匯出 CSV</button>
                 </div>
@@ -466,6 +493,29 @@ function updateFilterOptions() {
         // 不自動填入，讓使用者手動選擇（空值代表全部）
     }
 
+    // 填充年度下拉選單
+    const years = [...new Set(allData.map(d => {
+        const df = d.dateFrom || '';
+        return df ? df.substring(0, 4) : null;
+    }).filter(Boolean))].sort();
+    const yearSel = document.getElementById('filterYear');
+    const curYear = yearSel.value;
+    yearSel.innerHTML = '<option value="all">全部年度</option>' + years.map(y => `<option value="${y}">${y} 年</option>`).join('');
+    yearSel.value = years.includes(curYear) ? curYear : 'all';
+
+    // 填充月份下拉選單（依選擇的年度過濾可用月份）
+    const selectedYear = yearSel.value;
+    const months = selectedYear !== 'all'
+        ? [...new Set(allData.filter(d => (d.dateFrom || '').startsWith(selectedYear)).map(d => {
+            const df = d.dateFrom || '';
+            return df ? parseInt(df.substring(5, 7)) : null;
+        }).filter(Boolean))].sort((a, b) => a - b)
+        : [...Array(12).keys()].map(i => i + 1);
+    const monthSel = document.getElementById('filterMonth');
+    const curMonth = monthSel.value;
+    monthSel.innerHTML = '<option value="all">全部月份</option>' + months.map(m => `<option value="${m}">${m} 月</option>`).join('');
+    if (months.includes(parseInt(curMonth))) monthSel.value = curMonth;
+
     // 管理頁面下拉
     const delComp = document.getElementById('deleteCompany');
     if (delComp) delComp.innerHTML = '<option value="">選擇公司</option>' + companies.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -475,9 +525,65 @@ function updateFilterOptions() {
     if (delPer) delPer.innerHTML = '<option value="">選擇期間</option>' + periods.map(p => `<option value="${p}">${p}</option>`).join('');
 }
 
+// 清除年月下拉（當使用者手動選日期時）
+function clearYearMonth() {
+    document.getElementById('filterYear').value = 'all';
+    document.getElementById('filterMonth').value = 'all';
+}
+
+// 年月下拉變更時，自動設定日期區間
+function onYearMonthChange() {
+    const year = document.getElementById('filterYear').value;
+    const month = document.getElementById('filterMonth').value;
+    const fromInput = document.getElementById('filterDateFrom');
+    const toInput = document.getElementById('filterDateTo');
+
+    if (year === 'all') {
+        fromInput.value = '';
+        toInput.value = '';
+    } else if (month === 'all') {
+        fromInput.value = `${year}-01-01`;
+        toInput.value = `${year}-12-31`;
+    } else {
+        const m = month.padStart(2, '0');
+        const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+        fromInput.value = `${year}-${m}-01`;
+        toInput.value = `${year}-${m}-${String(lastDay).padStart(2, '0')}`;
+    }
+    applyFilters();
+}
+
+// 快捷篩選按鈕
+function setQuickFilter(type) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const yearSel = document.getElementById('filterYear');
+    const monthSel = document.getElementById('filterMonth');
+
+    if (type === 'thisMonth') {
+        yearSel.value = String(y);
+        monthSel.value = String(m);
+    } else if (type === 'lastMonth') {
+        const lm = m === 1 ? 12 : m - 1;
+        const ly = m === 1 ? y - 1 : y;
+        yearSel.value = String(ly);
+        monthSel.value = String(lm);
+    } else if (type === 'thisYear') {
+        yearSel.value = String(y);
+        monthSel.value = 'all';
+    } else {
+        yearSel.value = 'all';
+        monthSel.value = 'all';
+    }
+    onYearMonthChange();
+}
+
 function clearDateFilter() {
     document.getElementById('filterDateFrom').value = '';
     document.getElementById('filterDateTo').value = '';
+    document.getElementById('filterYear').value = 'all';
+    document.getElementById('filterMonth').value = 'all';
     applyFilters();
 }
 
@@ -513,12 +619,15 @@ function fmtN(n) { return '$' + Math.round(n || 0).toLocaleString(); }
 // ============================
 // 儀表板
 // ============================
+let monthlyTrendChart = null;
+
 function renderDashboard() {
     renderKPI();
     renderTopChart();
     renderDistChart();
     renderReturnRateChart();
     renderUnpaidChart();
+    renderMonthlyTrend();
     renderCompare();
 }
 
@@ -705,6 +814,132 @@ function renderCompare() {
 }
 
 // ============================
+// 月度趨勢分析
+// ============================
+function getMonthlyGroups(data) {
+    // 依 dateFrom 的年月分組並加總
+    const groups = {};
+    data.forEach(d => {
+        const df = d.dateFrom || '';
+        if (!df) return;
+        const ym = df.substring(0, 7); // yyyy-mm
+        if (!groups[ym]) groups[ym] = { 銷貨金額: 0, 退貨金額: 0, 未清金額: 0, 折讓金額: 0, 總計金額: 0, count: 0 };
+        groups[ym].銷貨金額 += (d.銷貨金額 || 0);
+        groups[ym].退貨金額 += (d.退貨金額 || 0);
+        groups[ym].未清金額 += (d.未清金額 || 0);
+        groups[ym].折讓金額 += (d.折讓金額 || 0);
+        groups[ym].總計金額 += (d.總計金額 || 0);
+        groups[ym].count++;
+    });
+    // 按月份排序
+    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function renderMonthlyTrend() {
+    const section = document.getElementById('monthlyTrendSection');
+    const monthly = getMonthlyGroups(filteredData);
+
+    // 至少 2 個月的資料才顯示趨勢
+    if (monthly.length < 2) {
+        section.classList.add('hidden');
+        if (monthlyTrendChart) { monthlyTrendChart.destroy(); monthlyTrendChart = null; }
+        document.getElementById('monthlySummaryCards').innerHTML = '';
+        return;
+    }
+    section.classList.remove('hidden');
+
+    const labels = monthly.map(([ym]) => {
+        const [y, m] = ym.split('-');
+        return `${y}/${parseInt(m)}月`;
+    });
+    const salesData = monthly.map(([, g]) => g.銷貨金額);
+    const returnData = monthly.map(([, g]) => g.退貨金額);
+    const unpaidData = monthly.map(([, g]) => g.未清金額);
+
+    const cfg = {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: '銷貨金額',
+                    data: salesData,
+                    borderColor: '#6B8C00',
+                    backgroundColor: 'rgba(107,140,0,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    borderWidth: 2.5,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#6B8C00',
+                },
+                {
+                    label: '退貨金額',
+                    data: returnData,
+                    borderColor: '#c0392b',
+                    backgroundColor: 'rgba(192,57,43,0.05)',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#c0392b',
+                },
+                {
+                    label: '未清金額',
+                    data: unpaidData,
+                    borderColor: '#FFAA00',
+                    backgroundColor: 'rgba(255,170,0,0.05)',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#FFAA00',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { font: { size: 11 }, padding: 16, usePointStyle: true } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}：${fmtN(ctx.raw)}`
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                y: { ticks: { callback: v => fmtN(v), font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } }
+            }
+        }
+    };
+
+    if (monthlyTrendChart) {
+        monthlyTrendChart.data = cfg.data;
+        monthlyTrendChart.options = cfg.options;
+        monthlyTrendChart.update();
+    } else {
+        monthlyTrendChart = new Chart(document.getElementById('monthlyTrendChart'), cfg);
+    }
+
+    // 月度彙總小卡
+    const cardsHtml = monthly.map(([ym, g]) => {
+        const [y, m] = ym.split('-');
+        const retRate = g.銷貨金額 > 0 ? (g.退貨金額 / g.銷貨金額 * 100) : 0;
+        return `<div class="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <p class="text-xs font-bold text-gray-500 mb-1">${y}/${parseInt(m)}月</p>
+            <p class="text-sm font-bold font-mono text-gray-800">${fmtN(g.銷貨金額)}</p>
+            <div class="flex items-center gap-2 mt-1">
+                <span class="text-[10px] ${retRate > 0 ? 'text-red-500' : 'text-gray-400'}">退貨率 ${retRate.toFixed(1)}%</span>
+            </div>
+            <p class="text-[10px] mt-0.5 ${g.未清金額 > 0 ? 'text-amber-600' : 'text-green-600'}">${g.未清金額 > 0 ? '未清 ' + fmtN(g.未清金額) : '✓ 全清'}</p>
+        </div>`;
+    }).join('');
+    document.getElementById('monthlySummaryCards').innerHTML = cardsHtml;
+}
+
+// ============================
 // 客戶明細表格
 // ============================
 function renderDetailTable() {
@@ -719,6 +954,8 @@ function renderDetailTable() {
             const rb = (b.銷貨金額 || 0) > 0 ? (b.退貨金額 || 0) / b.銷貨金額 : 0;
             return rb - ra;
         });
+    } else if (sortKey === '年月') {
+        data.sort((a, b) => (b.dateFrom || '').localeCompare(a.dateFrom || ''));
     } else {
         data.sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
     }
@@ -730,12 +967,12 @@ function renderDetailTable() {
     const slice = data.slice(detailPage * PAGE_SIZE, (detailPage + 1) * PAGE_SIZE);
 
     const hasMultiCompany = new Set(filteredData.map(d => d.company)).size > 1;
-    const hasMultiPeriod = new Set(filteredData.map(d => d.period)).size > 1;
 
     document.getElementById('detailTHead').innerHTML = `<tr>
         <th class="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">客戶名稱</th>
         ${hasMultiCompany ? '<th class="px-3 py-3 text-xs font-bold text-gray-500 uppercase">公司</th>' : ''}
-        ${hasMultiPeriod ? '<th class="px-3 py-3 text-xs font-bold text-gray-500 uppercase">期間</th>' : ''}
+        <th class="px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('年月')">年度 ↕</th>
+        <th class="px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('年月')">月份 ↕</th>
         <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('銷貨金額')">銷貨金額 ↕</th>
         <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase">營業稅</th>
         <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('退貨金額')">退貨金額 ↕</th>
@@ -766,13 +1003,19 @@ function renderDetailTable() {
             ? '<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">得來素</span>'
             : `<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">${r.company || ''}</span>`;
 
+        // 解析年度和月份
+        const df = r.dateFrom || '';
+        const rowYear = df ? df.substring(0, 4) : '—';
+        const rowMonth = df ? parseInt(df.substring(5, 7)) + '月' : '—';
+
         return `<tr class="hover:bg-gray-50 border-b border-gray-100">
             <td class="px-4 py-2.5 text-left whitespace-nowrap">
                 <span class="text-gray-400 text-xs font-mono mr-1">${rankIcon}</span>
                 <span class="font-medium">${r.客戶名稱 || ''}</span>
             </td>
             ${hasMultiCompany ? `<td class="px-3 py-2.5 text-center">${compBadge}</td>` : ''}
-            ${hasMultiPeriod ? `<td class="px-3 py-2.5 text-center text-xs text-gray-500">${r.period || ''}</td>` : ''}
+            <td class="px-3 py-2.5 text-center text-xs text-gray-500">${rowYear}</td>
+            <td class="px-3 py-2.5 text-center text-xs text-gray-500">${rowMonth}</td>
             <td class="px-3 py-2.5 text-right font-bold font-mono">${fmtN(salesAmt)}</td>
             <td class="px-3 py-2.5 text-right font-mono text-gray-500">${fmtN(r.營業稅 || 0)}</td>
             <td class="px-3 py-2.5 text-right font-mono ${retAmt > 0 ? 'text-red-600' : 'text-gray-400'}">${retAmt > 0 ? fmtN(retAmt) : '—'}</td>
@@ -816,10 +1059,13 @@ function exportCSV() {
     let data = [...filteredData];
     data.sort((a, b) => (b.銷貨金額 || 0) - (a.銷貨金額 || 0));
     const totalSales = data.reduce((a, r) => a + (r.銷貨金額 || 0), 0);
-    const headers = ['排名', '客戶名稱', '公司', '期間', '銷貨金額', '營業稅', '退貨金額', '折讓金額', '運費', '總計金額', '已收金額', '未清金額', '退貨率%', '營業佔比%'];
+    const headers = ['排名', '客戶名稱', '公司', '年度', '月份', '期間', '銷貨金額', '營業稅', '退貨金額', '折讓金額', '運費', '總計金額', '已收金額', '未清金額', '退貨率%', '營業佔比%'];
     const rows = data.map((r, i) => {
         const sa = r.銷貨金額 || 0, ra = r.退貨金額 || 0;
-        return [i + 1, r.客戶名稱, r.company, r.period, sa, r.營業稅 || 0, ra, r.折讓金額 || 0, r.運費 || 0,
+        const df = r.dateFrom || '';
+        const csvYear = df ? df.substring(0, 4) : '';
+        const csvMonth = df ? parseInt(df.substring(5, 7)) : '';
+        return [i + 1, r.客戶名稱, r.company, csvYear, csvMonth, r.period, sa, r.營業稅 || 0, ra, r.折讓金額 || 0, r.運費 || 0,
             r.總計金額 || 0, r.已收金額 || 0, r.未清金額 || 0,
             sa > 0 ? (ra / sa * 100).toFixed(2) : '0', totalSales > 0 ? (sa / totalSales * 100).toFixed(2) : '0'];
     });
