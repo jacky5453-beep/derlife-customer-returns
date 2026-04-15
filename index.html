@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客戶銷退分析系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <!-- SheetJS -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: '#C3F000',
+                        'brand-orange': '#FFAA00',
+                        'brand-dark': '#1A1A16',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+        .tab-btn { transition: all 0.2s ease; }
+        .tab-btn.active { border-bottom: 3px solid #C3F000; color: #C3F000; font-weight: 600; }
+        .kpi-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
+        .drop-zone { transition: all 0.3s ease; }
+        .drop-zone.drag-over { border-color: #C3F000; background: rgba(195, 240, 0, 0.05); }
+        .progress-bar { transition: width 0.3s ease; }
+        .data-table th { position: sticky; top: 0; z-index: 10; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-spinner { animation: spin 1s linear infinite; }
+        .chart-container { position: relative; width: 100%; }
+        .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- ==================== 登入畫面 ==================== -->
+    <div id="loginScreen" class="min-h-screen flex items-center justify-center bg-brand-dark">
+        <div class="text-center p-8">
+            <img src="logo.png" alt="得來素" class="h-16 w-auto mx-auto mb-6" onerror="this.style.display='none'">
+            <h1 class="text-2xl font-bold mb-2" style="color: #C3F000;">客戶銷退分析系統</h1>
+            <p class="text-gray-400 text-sm mb-8">DerLife Customer Sales & Returns Analytics</p>
+            <button onclick="googleLogin()" id="loginBtn" class="px-6 py-3 bg-white text-brand-dark font-semibold rounded-lg shadow-lg hover:shadow-xl transition flex items-center gap-3 mx-auto">
+                <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                使用 Google 帳號登入
+            </button>
+            <p id="loginError" class="text-red-400 text-sm mt-4 hidden"></p>
+            <p id="loginLoading" class="text-gray-500 text-sm mt-4 hidden">驗證中...</p>
+        </div>
+    </div>
+
+    <!-- ==================== 主應用 ==================== -->
+    <div id="mainApp" class="hidden">
+        <!-- Header -->
+        <header class="bg-brand-dark text-white sticky top-0 z-50 shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <img src="logo.png" alt="得來素" class="h-8 w-auto" onerror="this.style.display='none'">
+                    <div>
+                        <h1 class="text-lg font-bold" style="color: #C3F000;">客戶銷退分析系統</h1>
+                        <p class="text-xs text-gray-400">Customer Sales & Returns Analytics</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="dataStatus" class="text-xs text-gray-400 hidden md:inline">尚未載入資料</span>
+                    <span id="loadingIndicator" class="hidden">
+                        <svg class="loading-spinner w-4 h-4 text-brand" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    </span>
+                    <span id="userEmail" class="text-xs text-gray-300 hidden md:inline"></span>
+                    <button onclick="logout()" class="text-xs px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 transition">登出</button>
+                </div>
+            </div>
+            <!-- 頁籤列 -->
+            <div class="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto border-t border-gray-700">
+                <button onclick="switchTab('dashboard')" class="tab-btn px-4 py-2.5 text-sm text-gray-400 hover:text-white whitespace-nowrap active" data-tab="dashboard">📊 儀表板</button>
+                <button onclick="switchTab('detail')" class="tab-btn px-4 py-2.5 text-sm text-gray-400 hover:text-white whitespace-nowrap" data-tab="detail">📋 客戶明細</button>
+                <button onclick="switchTab('import')" class="tab-btn px-4 py-2.5 text-sm text-gray-400 hover:text-white whitespace-nowrap" data-tab="import">📤 資料匯入</button>
+                <button onclick="switchTab('admin')" class="tab-btn px-4 py-2.5 text-sm text-gray-400 hover:text-white whitespace-nowrap hidden" data-tab="admin" id="adminTabBtn">👥 權限管理</button>
+            </div>
+        </header>
+
+        <!-- 篩選列 -->
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-gray-600">公司：</label>
+                <select id="filterCompany" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                    <option value="all">全部公司</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-gray-600">期間：</label>
+                <select id="filterPeriod" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                    <option value="all">全部期間</option>
+                </select>
+            </div>
+            <span id="filterInfo" class="text-xs text-gray-400 ml-auto"></span>
+        </div>
+
+        <!-- ==================== 儀表板頁籤 ==================== -->
+        <div id="tab-dashboard" class="tab-content max-w-7xl mx-auto px-4 pb-8">
+            <!-- KPI -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6" id="kpiArea"></div>
+            <!-- 圖表第一排：前20大客戶 + 銷售分布 -->
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
+                <div class="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">前20大客戶銷貨金額排行</h3>
+                    <div class="chart-container" style="height:400px"><canvas id="topChart"></canvas></div>
+                </div>
+                <div class="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">客戶銷售金額分布</h3>
+                    <div class="chart-container" style="height:400px"><canvas id="distChart"></canvas></div>
+                </div>
+            </div>
+            <!-- 圖表第二排：退貨率 + 未清金額 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div class="bg-white rounded-xl border border-gray-200 p-5">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">退貨率最高 TOP 10（銷貨金額 > 1萬）</h3>
+                    <div class="chart-container" style="height:300px"><canvas id="returnRateChart"></canvas></div>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-5">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">未清金額 TOP 10</h3>
+                    <div class="chart-container" style="height:300px"><canvas id="unpaidChart"></canvas></div>
+                </div>
+            </div>
+            <!-- 公司對比 -->
+            <div id="compareSection" class="bg-white rounded-xl border border-gray-200 p-5 hidden">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">公司關鍵指標對比</h3>
+                <div id="compareRows"></div>
+            </div>
+        </div>
+
+        <!-- ==================== 客戶明細頁籤 ==================== -->
+        <div id="tab-detail" class="tab-content max-w-7xl mx-auto px-4 pb-8 hidden">
+            <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div class="p-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
+                    <h3 class="text-sm font-bold">客戶銷退明細</h3>
+                    <div class="flex-1"></div>
+                    <input type="text" id="searchInput" placeholder="搜尋客戶名稱..." oninput="renderDetailTable()"
+                        class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-52 focus:ring-2 focus:ring-brand focus:border-brand outline-none">
+                    <select id="sortSelect" onchange="renderDetailTable()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white">
+                        <option value="銷貨金額">依銷貨金額排序</option>
+                        <option value="總計金額">依總計金額排序</option>
+                        <option value="退貨金額">依退貨金額排序</option>
+                        <option value="未清金額">依未清金額排序</option>
+                        <option value="退貨率">依退貨率排序</option>
+                    </select>
+                    <button onclick="exportCSV()" class="text-sm px-4 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium">⬇ 匯出 CSV</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="w-full text-sm">
+                        <thead id="detailTHead" class="bg-gray-50 text-xs text-gray-500 uppercase"></thead>
+                        <tbody id="detailTBody"></tbody>
+                    </table>
+                </div>
+                <div id="detailPagination" class="p-3 border-t border-gray-200 flex items-center justify-end gap-2"></div>
+            </div>
+        </div>
+
+        <!-- ==================== 資料匯入頁籤 ==================== -->
+        <div id="tab-import" class="tab-content max-w-7xl mx-auto px-4 pb-8 hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 上傳區 -->
+                <div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-4">
+                        <h3 class="text-sm font-bold mb-4">匯入 Excel 檔案</h3>
+                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-700">
+                            <strong>支援格式：</strong>ERP 匯出的「客戶銷退貨統計表」，系統會自動跳過前面的表頭列，並自動辨識公司名稱與期間。
+                        </div>
+                        <div class="flex flex-wrap gap-3 mb-4">
+                            <div class="flex-1 min-w-[140px]">
+                                <label class="text-xs font-medium text-gray-500 mb-1 block">公司</label>
+                                <select id="importCompany" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                                    <option value="得來素">得來素企業</option>
+                                    <option value="緣味">緣味食品行</option>
+                                </select>
+                            </div>
+                            <div class="flex-1 min-w-[140px]">
+                                <label class="text-xs font-medium text-gray-500 mb-1 block">期間標籤</label>
+                                <input type="text" id="importPeriod" placeholder="例如：2025年度、2025Q1" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2">
+                            </div>
+                        </div>
+                        <!-- 拖曳區 -->
+                        <div id="dropZone" class="drop-zone border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand"
+                             onclick="document.getElementById('fileInput').click()"
+                             ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                            <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                            <p class="text-sm text-gray-500">拖曳 Excel 檔案到這裡，或<span class="text-brand-orange font-medium">點擊選擇</span></p>
+                            <p class="text-xs text-gray-400 mt-1">支援 .xlsx, .xls, .csv</p>
+                            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFileSelect(event)">
+                        </div>
+                    </div>
+                    <!-- 預覽區 -->
+                    <div id="previewArea" class="bg-white rounded-xl border border-gray-200 p-6 hidden">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold">匯入預覽</h3>
+                            <span id="previewFileName" class="text-xs text-gray-400"></span>
+                        </div>
+                        <div id="previewInfo" class="mb-3"></div>
+                        <!-- 預覽表格 -->
+                        <div class="table-responsive max-h-64 overflow-y-auto border border-gray-200 rounded-lg mb-4">
+                            <table class="w-full text-xs">
+                                <thead id="previewTHead" class="bg-gray-50 sticky top-0"></thead>
+                                <tbody id="previewTBody"></tbody>
+                            </table>
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="executeImport()" id="importBtn" class="px-5 py-2 rounded-lg text-sm font-bold text-brand-dark transition" style="background:#C3F000" onmouseover="this.style.background='#FFAA00';this.style.color='#fff'" onmouseout="this.style.background='#C3F000';this.style.color='#1A1A16'">確認匯入</button>
+                            <button onclick="cancelImport()" class="px-5 py-2 rounded-lg text-sm border border-gray-300 hover:bg-gray-50">取消</button>
+                        </div>
+                        <div id="importProgress" class="hidden mt-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2"><div id="importProgressBar" class="progress-bar bg-brand h-2 rounded-full" style="width:0%"></div></div>
+                            <p id="importProgressText" class="text-xs text-gray-500 mt-1"></p>
+                        </div>
+                    </div>
+                </div>
+                <!-- 匯入歷史 -->
+                <div class="bg-white rounded-xl border border-gray-200 p-6">
+                    <h3 class="text-sm font-bold mb-4">匯入歷史</h3>
+                    <div id="importHistory" class="text-sm text-gray-500">載入中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 權限管理頁籤 ==================== -->
+        <div id="tab-admin" class="tab-content max-w-7xl mx-auto px-4 pb-8 hidden">
+            <div class="bg-white rounded-xl border border-gray-200 p-6">
+                <h3 class="text-sm font-bold mb-4">白名單管理</h3>
+                <div class="flex gap-3 mb-4">
+                    <input type="email" id="newEmailInput" placeholder="輸入 Email 加入白名單" class="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand outline-none">
+                    <select id="newRoleSelect" class="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                        <option value="viewer">檢視者</option>
+                        <option value="editor">編輯者</option>
+                        <option value="admin">管理員</option>
+                    </select>
+                    <button onclick="addWhitelistUser()" class="px-4 py-2 rounded-lg text-sm font-bold text-brand-dark transition" style="background:#C3F000">新增</button>
+                </div>
+                <div id="whitelistTable" class="text-sm">載入中...</div>
+            </div>
+            <!-- 資料管理 -->
+            <div class="bg-white rounded-xl border border-gray-200 p-6 mt-4">
+                <h3 class="text-sm font-bold mb-4">資料管理</h3>
+                <p class="text-xs text-gray-500 mb-3">可依公司或期間刪除整批匯入資料</p>
+                <div class="flex flex-wrap gap-3 mb-4">
+                    <select id="deleteCompany" class="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                        <option value="">選擇公司</option>
+                    </select>
+                    <select id="deletePeriod" class="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                        <option value="">選擇期間</option>
+                    </select>
+                    <button onclick="deleteBatchData()" class="px-4 py-2 rounded-lg text-sm font-bold bg-red-500 text-white hover:bg-red-600 transition">刪除選取資料</button>
+                </div>
+                <div id="deleteStatus" class="text-xs text-gray-500"></div>
+            </div>
+        </div>
+
+        <!-- 空狀態提示 -->
+        <div id="emptyState" class="hidden max-w-7xl mx-auto px-4 py-16 text-center">
+            <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <p class="text-gray-500 mb-2">尚未匯入任何資料</p>
+            <p class="text-sm text-gray-400 mb-4">請前往「資料匯入」頁籤上傳 Excel 檔案</p>
+            <button onclick="switchTab('import')" class="px-5 py-2 rounded-lg text-sm font-bold text-brand-dark transition" style="background:#C3F000">前往匯入</button>
+        </div>
+    </div>
+
+<script>
+// ============================
+// Firebase 設定
+// ============================
+const firebaseConfig = {
+    apiKey: "AIzaSyCMnHuSPNX8kJC53eYgWHXUV4BQjXhM7uo",
+    authDomain: "derlife-audit.firebaseapp.com",
+    projectId: "derlife-audit",
+    storageBucket: "derlife-audit.firebasestorage.app",
+    messagingSenderId: "992417419976",
+    appId: "1:992417419976:web:8b44d06620ca2e8cd5cbfd"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// Firestore 集合名稱
+const COLLECTION = 'customer-sales-returns';
+const BATCH_COLLECTION = 'csr-import-batches';
+const WHITELIST_COLLECTION = 'returns-whitelist';
+
+// ============================
+// 全域變數
+// ============================
+let allData = [], filteredData = [];
+let charts = {};
+let detailPage = 0;
+const PAGE_SIZE = 50;
+let currentUser = null, isAdmin = false;
+let pendingImportData = [];
+
+// 系統欄位定義（對應 ERP「客戶銷退貨統計表」）
+const SYSTEM_FIELDS = [
+    { key: '客戶名稱', type: 'string' },
+    { key: '銷貨金額', type: 'number' },
+    { key: '營業稅', type: 'number' },
+    { key: '退貨金額', type: 'number' },
+    { key: '折讓金額', type: 'number' },
+    { key: '運費', type: 'number' },
+    { key: '總計金額', type: 'number' },
+    { key: '已收金額', type: 'number' },
+    { key: '未清金額', type: 'number' },
+];
+
+// Excel 欄位名稱對應（ERP 匯出的常見名稱）
+const FIELD_ALIASES = {
+    '客戶名稱': ['客戶名稱', '客戶'],
+    '銷貨金額': ['銷貨金額(本)', '銷貨金額'],
+    '營業稅': ['營業稅(本)', '營業稅'],
+    '退貨金額': ['退貨金額(本)', '退貨金額'],
+    '折讓金額': ['折讓金額(本)', '折讓金額'],
+    '運費': ['運費'],
+    '總計金額': ['總計金額(本)', '總計金額'],
+    '已收金額': ['已收金額(本)', '已收金額'],
+    '未清金額': ['未清金額(本)', '未清金額'],
+};
+
+// ============================
+// 登入系統
+// ============================
+async function googleLogin() {
+    document.getElementById('loginBtn').disabled = true;
+    document.getElementById('loginLoading').classList.remove('hidden');
+    document.getElementById('loginError').classList.add('hidden');
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const result = await auth.signInWithPopup(provider);
+        await verifyWhitelist(result.user);
+    } catch (e) {
+        document.getElementById('loginError').textContent = '登入失敗：' + e.message;
+        document.getElementById('loginError').classList.remove('hidden');
+        document.getElementById('loginBtn').disabled = false;
+        document.getElementById('loginLoading').classList.add('hidden');
+    }
+}
+
+async function verifyWhitelist(user) {
+    const email = user.email;
+    const allDocs = await db.collection(WHITELIST_COLLECTION).limit(1).get();
+    if (allDocs.empty) {
+        // 第一位使用者自動成為管理員
+        await db.collection(WHITELIST_COLLECTION).doc(email).set({
+            email, role: 'admin',
+            addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            addedBy: 'system-first-user'
+        });
+        showApp(user, true);
+        return;
+    }
+    const doc = await db.collection(WHITELIST_COLLECTION).doc(email).get();
+    if (!doc.exists) {
+        await auth.signOut();
+        document.getElementById('loginError').textContent = '您的帳號未被授權使用此系統，請聯繫管理員。';
+        document.getElementById('loginError').classList.remove('hidden');
+        document.getElementById('loginBtn').disabled = false;
+        document.getElementById('loginLoading').classList.add('hidden');
+        return;
+    }
+    showApp(user, doc.data().role === 'admin');
+}
+
+function showApp(user, admin) {
+    currentUser = user;
+    isAdmin = admin;
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    document.getElementById('userEmail').textContent = user.email;
+    if (isAdmin) document.getElementById('adminTabBtn').classList.remove('hidden');
+    loadAllData();
+}
+
+function logout() { auth.signOut(); location.reload(); }
+
+auth.onAuthStateChanged(async (user) => {
+    if (user) { try { await verifyWhitelist(user); } catch(e) { console.error(e); } }
+});
+
+// ============================
+// 頁籤切換
+// ============================
+function switchTab(tab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    const tabEl = document.getElementById('tab-' + tab);
+    if (tabEl) tabEl.classList.remove('hidden');
+    const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+    if (btn) btn.classList.add('active');
+    if (tab === 'admin' && isAdmin) loadWhitelist();
+    if (tab === 'import') loadImportHistory();
+    updateEmptyState(tab);
+}
+
+function updateEmptyState(tab) {
+    const empty = document.getElementById('emptyState');
+    if ((tab === 'dashboard' || tab === 'detail') && allData.length === 0) {
+        empty.classList.remove('hidden');
+        document.getElementById('tab-' + tab).classList.add('hidden');
+    } else {
+        empty.classList.add('hidden');
+    }
+}
+
+// ============================
+// 載入 Firestore 資料
+// ============================
+async function loadAllData() {
+    showLoading(true);
+    try {
+        const snap = await db.collection(COLLECTION).get();
+        allData = [];
+        snap.forEach(doc => allData.push({ id: doc.id, ...doc.data() }));
+        updateFilterOptions();
+        applyFilters();
+        document.getElementById('dataStatus').textContent = `已載入 ${allData.length} 筆`;
+    } catch (e) {
+        console.error('載入資料失敗:', e);
+        document.getElementById('dataStatus').textContent = '載入失敗';
+    }
+    showLoading(false);
+}
+
+function showLoading(show) {
+    document.getElementById('loadingIndicator').classList.toggle('hidden', !show);
+}
+
+// ============================
+// 篩選
+// ============================
+function updateFilterOptions() {
+    const companies = [...new Set(allData.map(d => d.company).filter(Boolean))].sort();
+    const compSel = document.getElementById('filterCompany');
+    const curComp = compSel.value;
+    compSel.innerHTML = '<option value="all">全部公司</option>' + companies.map(c => `<option value="${c}">${c}</option>`).join('');
+    compSel.value = companies.includes(curComp) ? curComp : 'all';
+
+    const periods = [...new Set(allData.map(d => d.period).filter(Boolean))].sort();
+    const perSel = document.getElementById('filterPeriod');
+    const curPer = perSel.value;
+    perSel.innerHTML = '<option value="all">全部期間</option>' + periods.map(p => `<option value="${p}">${p}</option>`).join('');
+    perSel.value = periods.includes(curPer) ? curPer : 'all';
+
+    // 管理頁面下拉
+    const delComp = document.getElementById('deleteCompany');
+    if (delComp) delComp.innerHTML = '<option value="">選擇公司</option>' + companies.map(c => `<option value="${c}">${c}</option>`).join('');
+    const delPer = document.getElementById('deletePeriod');
+    if (delPer) delPer.innerHTML = '<option value="">選擇期間</option>' + periods.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+function applyFilters() {
+    const comp = document.getElementById('filterCompany').value;
+    const per = document.getElementById('filterPeriod').value;
+    filteredData = allData.filter(d => {
+        if (comp !== 'all' && d.company !== comp) return false;
+        if (per !== 'all' && d.period !== per) return false;
+        return true;
+    });
+    document.getElementById('filterInfo').textContent = `篩選結果：${filteredData.length} 筆 / 共 ${allData.length} 筆`;
+    detailPage = 0;
+    renderDashboard();
+    renderDetailTable();
+    const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'dashboard';
+    updateEmptyState(activeTab);
+}
+
+// ============================
+// 格式工具
+// ============================
+function fmtN(n) { return '$' + Math.round(n || 0).toLocaleString(); }
+
+// ============================
+// 儀表板
+// ============================
+function renderDashboard() {
+    renderKPI();
+    renderTopChart();
+    renderDistChart();
+    renderReturnRateChart();
+    renderUnpaidChart();
+    renderCompare();
+}
+
+function renderKPI() {
+    const data = filteredData;
+    const salesAmt = data.reduce((a, r) => a + (r.銷貨金額 || 0), 0);
+    const totalAmt = data.reduce((a, r) => a + (r.總計金額 || 0), 0);
+    const returnAmt = data.reduce((a, r) => a + (r.退貨金額 || 0), 0);
+    const discountAmt = data.reduce((a, r) => a + (r.折讓金額 || 0), 0);
+    const unpaidAmt = data.reduce((a, r) => a + (r.未清金額 || 0), 0);
+    const retRate = salesAmt > 0 ? (returnAmt / salesAmt * 100) : 0;
+
+    document.getElementById('kpiArea').innerHTML = `
+        <div class="kpi-card bg-brand-dark rounded-xl p-4 md:p-5">
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">銷貨金額</p>
+            <p class="text-xl md:text-2xl font-bold font-mono" style="color:#C3F000">${fmtN(salesAmt)}</p>
+            <p class="text-xs mt-1" style="color:rgba(255,255,255,0.5)">${data.length} 個客戶</p>
+        </div>
+        <div class="kpi-card bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">總計金額</p>
+            <p class="text-xl md:text-2xl font-bold font-mono text-gray-800">${fmtN(totalAmt)}</p>
+            <p class="text-xs text-gray-400 mt-1">含稅後金額</p>
+        </div>
+        <div class="kpi-card bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">退貨金額</p>
+            <p class="text-xl md:text-2xl font-bold font-mono ${returnAmt > 0 ? 'text-red-600' : 'text-gray-800'}">${fmtN(returnAmt)}</p>
+            <p class="text-xs text-gray-400 mt-1">退貨率 ${retRate.toFixed(2)}%</p>
+        </div>
+        <div class="kpi-card bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">折讓金額</p>
+            <p class="text-xl md:text-2xl font-bold font-mono ${discountAmt > 0 ? 'text-amber-600' : 'text-gray-800'}">${fmtN(discountAmt)}</p>
+            <p class="text-xs text-gray-400 mt-1">折讓比 ${salesAmt > 0 ? (discountAmt / salesAmt * 100).toFixed(2) : '0'}%</p>
+        </div>
+        <div class="kpi-card bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">未清金額</p>
+            <p class="text-xl md:text-2xl font-bold font-mono ${unpaidAmt > 0 ? 'text-red-600' : 'text-green-600'}">${fmtN(unpaidAmt)}</p>
+            <p class="text-xs ${unpaidAmt > 0 ? 'text-red-400' : 'text-green-500'} mt-1">${unpaidAmt > 0 ? '⚠ 有應收帳款' : '✓ 全數已收'}</p>
+        </div>`;
+}
+
+function renderTopChart() {
+    const sorted = [...filteredData].sort((a, b) => (b.銷貨金額 || 0) - (a.銷貨金額 || 0)).slice(0, 20);
+    const labels = sorted.map(r => {
+        const name = r.客戶名稱 || '';
+        return name.length > 14 ? name.slice(0, 14) + '…' : name;
+    });
+    const vals = sorted.map(r => r.銷貨金額 || 0);
+    const colors = sorted.map((r, i) => {
+        if (r.company === '緣味') return i < 3 ? 'rgba(255,170,0,0.9)' : 'rgba(255,170,0,0.55)';
+        return i < 3 ? 'rgba(26,26,22,0.9)' : 'rgba(107,140,0,0.7)';
+    });
+    const cfg = {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '銷貨金額', data: vals, backgroundColor: colors, borderRadius: 3 }] },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtN(ctx.raw) } } },
+            scales: {
+                x: { ticks: { callback: v => fmtN(v), font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } },
+                y: { ticks: { font: { size: 10 } }, grid: { display: false } }
+            }
+        }
+    };
+    if (charts.top) { charts.top.data = cfg.data; charts.top.options = cfg.options; charts.top.update(); }
+    else charts.top = new Chart(document.getElementById('topChart'), cfg);
+}
+
+function renderDistChart() {
+    const tiers = [
+        { label: '1000萬+', min: 10000000, max: Infinity, color: '#1A1A16' },
+        { label: '100萬~1000萬', min: 1000000, max: 10000000, color: '#6B8C00' },
+        { label: '10萬~100萬', min: 100000, max: 1000000, color: '#C3F000' },
+        { label: '1萬~10萬', min: 10000, max: 100000, color: '#FFAA00' },
+        { label: '1萬以下', min: 0, max: 10000, color: '#FFD980' },
+    ];
+    const counts = tiers.map(t => filteredData.filter(r => { const v = r.銷貨金額 || 0; return v >= t.min && v < t.max; }).length);
+    const cfg = {
+        type: 'doughnut',
+        data: { labels: tiers.map(t => t.label), datasets: [{ data: counts, backgroundColor: tiers.map(t => t.color), borderWidth: 3, borderColor: '#fff' }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, padding: 10 } }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.raw + ' 個客戶' } } }
+        }
+    };
+    if (charts.dist) { charts.dist.data = cfg.data; charts.dist.update(); }
+    else charts.dist = new Chart(document.getElementById('distChart'), cfg);
+}
+
+function renderReturnRateChart() {
+    // 篩選銷貨金額 > 1萬且有退貨的客戶
+    const meaningful = filteredData.filter(r => (r.銷貨金額 || 0) > 10000 && (r.退貨金額 || 0) > 0);
+    const sorted = meaningful.map(r => ({
+        name: r.客戶名稱 || '',
+        rate: (r.退貨金額 || 0) / (r.銷貨金額 || 1) * 100,
+        company: r.company
+    })).sort((a, b) => b.rate - a.rate).slice(0, 10);
+
+    const labels = sorted.map(r => r.name.length > 14 ? r.name.slice(0, 14) + '…' : r.name);
+    const vals = sorted.map(r => r.rate);
+    const colors = sorted.map(r => r.company === '緣味' ? '#FFAA00' : '#c0392b');
+    const cfg = {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '退貨率 %', data: vals, backgroundColor: colors, borderRadius: 3 }] },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.raw.toFixed(2) + '%' } } },
+            scales: {
+                x: { ticks: { callback: v => v + '%', font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } },
+                y: { ticks: { font: { size: 10 } }, grid: { display: false } }
+            }
+        }
+    };
+    if (charts.retRate) { charts.retRate.data = cfg.data; charts.retRate.options = cfg.options; charts.retRate.update(); }
+    else charts.retRate = new Chart(document.getElementById('returnRateChart'), cfg);
+}
+
+function renderUnpaidChart() {
+    // 未清金額 TOP 10
+    const withUnpaid = filteredData.filter(r => (r.未清金額 || 0) > 0);
+    const sorted = [...withUnpaid].sort((a, b) => (b.未清金額 || 0) - (a.未清金額 || 0)).slice(0, 10);
+    const labels = sorted.map(r => {
+        const name = r.客戶名稱 || '';
+        return name.length > 14 ? name.slice(0, 14) + '…' : name;
+    });
+    const vals = sorted.map(r => r.未清金額 || 0);
+    const colors = sorted.map(r => r.company === '緣味' ? '#FFAA00' : '#c0392b');
+    const cfg = {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '未清金額', data: vals, backgroundColor: colors, borderRadius: 3 }] },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtN(ctx.raw) } } },
+            scales: {
+                x: { ticks: { callback: v => fmtN(v), font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } },
+                y: { ticks: { font: { size: 10 } }, grid: { display: false } }
+            }
+        }
+    };
+    if (charts.unpaid) { charts.unpaid.data = cfg.data; charts.unpaid.options = cfg.options; charts.unpaid.update(); }
+    else charts.unpaid = new Chart(document.getElementById('unpaidChart'), cfg);
+}
+
+function renderCompare() {
+    const companies = [...new Set(filteredData.map(d => d.company).filter(Boolean))];
+    const section = document.getElementById('compareSection');
+    if (companies.length < 2) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+
+    const metrics = [
+        { key: '銷貨金額', label: '銷貨金額', fmt: fmtN },
+        { key: '總計金額', label: '總計金額', fmt: fmtN },
+        { key: '退貨金額', label: '退貨金額', fmt: fmtN },
+        { key: '折讓金額', label: '折讓金額', fmt: fmtN },
+        { key: '已收金額', label: '已收金額', fmt: fmtN },
+        { key: '未清金額', label: '未清金額', fmt: fmtN },
+    ];
+    const vals = {};
+    metrics.forEach(m => {
+        vals[m.key] = {};
+        companies.forEach(c => {
+            vals[m.key][c] = filteredData.filter(d => d.company === c).reduce((a, r) => a + (r[m.key] || 0), 0);
+        });
+    });
+    const companyColors = { '得來素': '#6B8C00', '緣味': '#FFAA00' };
+    const html = metrics.map(m => {
+        const max = Math.max(...companies.map(c => vals[m.key][c])) || 1;
+        return `<div class="mb-4">
+            <p class="text-xs font-bold text-gray-500 mb-2">${m.label}</p>
+            ${companies.map(c => {
+                const w = Math.max(Math.round(vals[m.key][c] / max * 100), 1);
+                const color = companyColors[c] || '#999';
+                return `<div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-semibold w-12 flex-shrink-0" style="color:${color}">${c}</span>
+                    <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                        <div class="h-full rounded-full flex items-center px-2" style="width:${w}%;background:${color};min-width:60px">
+                            <span class="text-xs font-bold text-white">${m.fmt(vals[m.key][c])}</span>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>`;
+    }).join('');
+    document.getElementById('compareRows').innerHTML = html;
+}
+
+// ============================
+// 客戶明細表格
+// ============================
+function renderDetailTable() {
+    const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    const sortKey = document.getElementById('sortSelect')?.value || '銷貨金額';
+    let data = [...filteredData];
+    if (q) data = data.filter(r => (r.客戶名稱 || '').toLowerCase().includes(q));
+
+    if (sortKey === '退貨率') {
+        data.sort((a, b) => {
+            const ra = (a.銷貨金額 || 0) > 0 ? (a.退貨金額 || 0) / a.銷貨金額 : 0;
+            const rb = (b.銷貨金額 || 0) > 0 ? (b.退貨金額 || 0) / b.銷貨金額 : 0;
+            return rb - ra;
+        });
+    } else {
+        data.sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
+    }
+
+    const totalSales = data.reduce((a, r) => a + (r.銷貨金額 || 0), 0);
+    const total = data.length;
+    const pages = Math.ceil(total / PAGE_SIZE) || 1;
+    if (detailPage >= pages) detailPage = 0;
+    const slice = data.slice(detailPage * PAGE_SIZE, (detailPage + 1) * PAGE_SIZE);
+
+    const hasMultiCompany = new Set(filteredData.map(d => d.company)).size > 1;
+    const hasMultiPeriod = new Set(filteredData.map(d => d.period)).size > 1;
+
+    document.getElementById('detailTHead').innerHTML = `<tr>
+        <th class="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">客戶名稱</th>
+        ${hasMultiCompany ? '<th class="px-3 py-3 text-xs font-bold text-gray-500 uppercase">公司</th>' : ''}
+        ${hasMultiPeriod ? '<th class="px-3 py-3 text-xs font-bold text-gray-500 uppercase">期間</th>' : ''}
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('銷貨金額')">銷貨金額 ↕</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase">營業稅</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('退貨金額')">退貨金額 ↕</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase">折讓</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase">運費</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('總計金額')">總計金額 ↕</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase">已收</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('未清金額')">未清金額 ↕</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-dark" onclick="setSort('退貨率')">退貨率 ↕</th>
+        <th class="text-right px-3 py-3 text-xs font-bold text-gray-500 uppercase">佔比</th>
+    </tr>`;
+
+    if (!slice.length) {
+        document.getElementById('detailTBody').innerHTML = '<tr><td colspan="13" class="text-center py-8 text-gray-400">查無資料</td></tr>';
+        document.getElementById('detailPagination').innerHTML = '';
+        return;
+    }
+
+    document.getElementById('detailTBody').innerHTML = slice.map((r, i) => {
+        const rank = detailPage * PAGE_SIZE + i + 1;
+        const rankIcon = rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : rank + '.';
+        const salesAmt = r.銷貨金額 || 0;
+        const retAmt = r.退貨金額 || 0;
+        const retRate = salesAmt > 0 ? (retAmt / salesAmt * 100) : 0;
+        const pct = totalSales > 0 ? (salesAmt / totalSales * 100) : 0;
+        const barW = Math.min(Math.round(pct * 4), 100);
+        const compBadge = r.company === '得來素'
+            ? '<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">得來素</span>'
+            : `<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">${r.company || ''}</span>`;
+
+        return `<tr class="hover:bg-gray-50 border-b border-gray-100">
+            <td class="px-4 py-2.5 text-left whitespace-nowrap">
+                <span class="text-gray-400 text-xs font-mono mr-1">${rankIcon}</span>
+                <span class="font-medium">${r.客戶名稱 || ''}</span>
+            </td>
+            ${hasMultiCompany ? `<td class="px-3 py-2.5 text-center">${compBadge}</td>` : ''}
+            ${hasMultiPeriod ? `<td class="px-3 py-2.5 text-center text-xs text-gray-500">${r.period || ''}</td>` : ''}
+            <td class="px-3 py-2.5 text-right font-bold font-mono">${fmtN(salesAmt)}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-gray-500">${fmtN(r.營業稅 || 0)}</td>
+            <td class="px-3 py-2.5 text-right font-mono ${retAmt > 0 ? 'text-red-600' : 'text-gray-400'}">${retAmt > 0 ? fmtN(retAmt) : '—'}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-gray-500">${(r.折讓金額 || 0) > 0 ? fmtN(r.折讓金額) : '—'}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-gray-500">${(r.運費 || 0) > 0 ? fmtN(r.運費) : '—'}</td>
+            <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmtN(r.總計金額 || 0)}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-gray-500">${fmtN(r.已收金額 || 0)}</td>
+            <td class="px-3 py-2.5 text-right font-mono ${(r.未清金額 || 0) > 0 ? 'text-red-600 font-bold' : 'text-gray-400'}">${(r.未清金額 || 0) > 0 ? fmtN(r.未清金額) : '—'}</td>
+            <td class="px-3 py-2.5 text-right">${retAmt > 0 ? `<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600">${retRate.toFixed(1)}%</span>` : '—'}</td>
+            <td class="px-3 py-2.5 text-right">
+                <div class="flex items-center gap-2 justify-end">
+                    <div class="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full rounded-full bg-green-500" style="width:${barW}%"></div></div>
+                    <span class="text-xs font-mono text-gray-500">${pct.toFixed(2)}%</span>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    // 分頁
+    if (pages <= 1) {
+        document.getElementById('detailPagination').innerHTML = `<span class="text-xs text-gray-400">共 ${total} 筆</span>`;
+    } else {
+        let html = `<span class="text-xs text-gray-400 mr-2">共 ${total} 筆</span>`;
+        html += `<button onclick="goDetailPage(${detailPage - 1})" class="px-2 py-1 rounded border text-xs ${detailPage === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100'}" ${detailPage === 0 ? 'disabled' : ''}>‹</button>`;
+        const s = Math.max(0, detailPage - 2), e = Math.min(pages - 1, s + 4);
+        for (let p = s; p <= e; p++) {
+            html += `<button onclick="goDetailPage(${p})" class="px-2 py-1 rounded border text-xs ${p === detailPage ? 'bg-brand-dark text-brand font-bold' : 'hover:bg-gray-100'}">${p + 1}</button>`;
+        }
+        html += `<button onclick="goDetailPage(${detailPage + 1})" class="px-2 py-1 rounded border text-xs ${detailPage >= pages - 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100'}" ${detailPage >= pages - 1 ? 'disabled' : ''}>›</button>`;
+        document.getElementById('detailPagination').innerHTML = html;
+    }
+}
+
+function setSort(key) { document.getElementById('sortSelect').value = key; renderDetailTable(); }
+function goDetailPage(p) { detailPage = Math.max(0, p); renderDetailTable(); }
+
+// ============================
+// CSV 匯出
+// ============================
+function exportCSV() {
+    let data = [...filteredData];
+    data.sort((a, b) => (b.銷貨金額 || 0) - (a.銷貨金額 || 0));
+    const totalSales = data.reduce((a, r) => a + (r.銷貨金額 || 0), 0);
+    const headers = ['排名', '客戶名稱', '公司', '期間', '銷貨金額', '營業稅', '退貨金額', '折讓金額', '運費', '總計金額', '已收金額', '未清金額', '退貨率%', '營業佔比%'];
+    const rows = data.map((r, i) => {
+        const sa = r.銷貨金額 || 0, ra = r.退貨金額 || 0;
+        return [i + 1, r.客戶名稱, r.company, r.period, sa, r.營業稅 || 0, ra, r.折讓金額 || 0, r.運費 || 0,
+            r.總計金額 || 0, r.已收金額 || 0, r.未清金額 || 0,
+            sa > 0 ? (ra / sa * 100).toFixed(2) : '0', totalSales > 0 ? (sa / totalSales * 100).toFixed(2) : '0'];
+    });
+    const csv = '\ufeff' + [headers, ...rows].map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = '客戶銷退分析_' + new Date().toLocaleDateString('zh-TW').replace(/\//g, '-') + '.csv';
+    a.click();
+}
+
+// ============================
+// Excel 匯入（支援 ERP 客戶銷退貨統計表）
+// ============================
+function handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function handleDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function handleDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+}
+function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (file) processFile(file);
+    e.target.value = '';
+}
+
+function processFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const wb = XLSX.read(e.target.result, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            if (!rawData.length) { alert('檔案無資料'); return; }
+
+            // 自動偵測表頭列（找到包含「客戶名稱」的行）
+            let headerRowIdx = -1;
+            for (let i = 0; i < Math.min(20, rawData.length); i++) {
+                const rowStr = rawData[i].map(c => String(c)).join('|');
+                if (rowStr.includes('客戶名稱') || rowStr.includes('銷貨金額')) {
+                    headerRowIdx = i;
+                    break;
+                }
+            }
+            if (headerRowIdx === -1) { headerRowIdx = 0; }
+
+            // 擷取表頭資訊（公司名、日期範圍）
+            let detectedInfo = '';
+            for (let i = 0; i < headerRowIdx; i++) {
+                const cell = String(rawData[i][0] || '').trim();
+                if (cell) detectedInfo += cell + '　';
+            }
+
+            const headers = rawData[headerRowIdx].map(c => String(c).trim());
+
+            // 建立欄位對應
+            const colMap = {};
+            SYSTEM_FIELDS.forEach(f => {
+                const aliases = FIELD_ALIASES[f.key] || [f.key];
+                const match = aliases.find(a => headers.includes(a));
+                if (match) colMap[f.key] = headers.indexOf(match);
+            });
+
+            // 從表頭下一行開始取資料，排除合計列和空白列
+            const dataRows = [];
+            for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+                const row = rawData[i];
+                const firstCell = String(row[0] || '').trim();
+                if (firstCell === '合計' || firstCell === '' || firstCell === '總計') continue;
+
+                const record = {};
+                SYSTEM_FIELDS.forEach(f => {
+                    const idx = colMap[f.key];
+                    if (idx !== undefined && idx !== -1) {
+                        if (f.type === 'number') {
+                            record[f.key] = Number(row[idx]) || 0;
+                        } else {
+                            record[f.key] = String(row[idx] || '').trim();
+                        }
+                    } else {
+                        record[f.key] = f.type === 'number' ? 0 : '';
+                    }
+                });
+
+                // 只要有客戶名稱就加入
+                if (record.客戶名稱) dataRows.push(record);
+            }
+
+            if (!dataRows.length) { alert('解析後無有效資料行'); return; }
+
+            pendingImportData = dataRows;
+            document.getElementById('previewFileName').textContent = file.name;
+
+            // 自動偵測公司名
+            if (detectedInfo.includes('緣味')) {
+                document.getElementById('importCompany').value = '緣味';
+            } else if (detectedInfo.includes('得來素')) {
+                document.getElementById('importCompany').value = '得來素';
+            }
+
+            // 自動偵測期間
+            const dateMatch = detectedInfo.match(/(\d{4}\/\d{2}\/\d{2})\s*到\s*(\d{4}\/\d{2}\/\d{2})/);
+            if (dateMatch) {
+                document.getElementById('importPeriod').value = dateMatch[1].replace(/\//g, '.') + '~' + dateMatch[2].replace(/\//g, '.');
+            }
+
+            showPreview(dataRows, colMap, file.name, detectedInfo);
+        } catch (err) {
+            alert('檔案解析失敗：' + err.message);
+            console.error(err);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function showPreview(data, colMap, fileName, detectedInfo) {
+    document.getElementById('previewArea').classList.remove('hidden');
+
+    // 資訊
+    const mappedFields = SYSTEM_FIELDS.filter(f => colMap[f.key] !== undefined);
+    const unmappedFields = SYSTEM_FIELDS.filter(f => colMap[f.key] === undefined);
+    let infoHtml = `<p class="text-sm text-gray-600 mb-1">共 <strong>${data.length}</strong> 筆客戶資料</p>`;
+    if (detectedInfo) {
+        infoHtml += `<p class="text-xs text-gray-400 mb-2">偵測到：${detectedInfo}</p>`;
+    }
+    if (unmappedFields.length > 0) {
+        infoHtml += `<p class="text-xs text-amber-600">⚠ ${unmappedFields.length} 個欄位未找到：${unmappedFields.map(f => f.key).join('、')}（將填入 0）</p>`;
+    } else {
+        infoHtml += `<p class="text-xs text-green-600">✓ 所有欄位已成功對應</p>`;
+    }
+    document.getElementById('previewInfo').innerHTML = infoHtml;
+
+    // 預覽表格
+    const preview = data.slice(0, 10);
+    const displayFields = SYSTEM_FIELDS;
+    document.getElementById('previewTHead').innerHTML = '<tr>' +
+        displayFields.map(f => `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500 whitespace-nowrap">${f.key}</th>`).join('') + '</tr>';
+    document.getElementById('previewTBody').innerHTML = preview.map(r => '<tr class="border-b border-gray-100">' +
+        displayFields.map(f => {
+            const val = r[f.key];
+            return `<td class="px-3 py-1.5 text-xs font-mono whitespace-nowrap">${f.type === 'number' ? Number(val).toLocaleString() : val}</td>`;
+        }).join('') + '</tr>').join('');
+}
+
+function cancelImport() {
+    document.getElementById('previewArea').classList.add('hidden');
+    pendingImportData = [];
+}
+
+async function executeImport() {
+    const company = document.getElementById('importCompany').value;
+    const period = document.getElementById('importPeriod').value.trim();
+    if (!period) { alert('請輸入期間標籤'); return; }
+
+    const btn = document.getElementById('importBtn');
+    btn.disabled = true;
+    btn.textContent = '匯入中...';
+    document.getElementById('importProgress').classList.remove('hidden');
+
+    const batchId = 'batch_' + Date.now();
+    const total = pendingImportData.length;
+    let imported = 0;
+
+    try {
+        const batchSize = 450;
+        for (let i = 0; i < total; i += batchSize) {
+            const batch = db.batch();
+            const chunk = pendingImportData.slice(i, i + batchSize);
+            chunk.forEach(row => {
+                if (!row.客戶名稱) return;
+                const record = {
+                    ...row,
+                    company, period, batchId,
+                    importDate: new Date().toISOString(),
+                    importedBy: currentUser?.email || ''
+                };
+                // 使用公司+客戶名稱+batchId 作為 doc ID，避免重複
+                const docId = `${company}_${row.客戶名稱}_${batchId}`;
+                const ref = db.collection(COLLECTION).doc(docId);
+                batch.set(ref, record);
+                imported++;
+            });
+            await batch.commit();
+            const pct = Math.round((i + chunk.length) / total * 100);
+            document.getElementById('importProgressBar').style.width = pct + '%';
+            document.getElementById('importProgressText').textContent = `已匯入 ${Math.min(i + chunk.length, total)} / ${total} 筆`;
+        }
+
+        // 儲存批次記錄
+        await db.collection(BATCH_COLLECTION).doc(batchId).set({
+            batchId, company, period,
+            date: new Date().toISOString(),
+            totalRows: total, imported,
+            fileName: document.getElementById('previewFileName').textContent,
+            importedBy: currentUser?.email || ''
+        });
+
+        alert(`匯入完成！共 ${imported} 筆客戶資料`);
+        cancelImport();
+        document.getElementById('importProgress').classList.add('hidden');
+        loadAllData();
+        loadImportHistory();
+    } catch (e) {
+        alert('匯入失敗：' + e.message);
+        console.error(e);
+    }
+    btn.disabled = false;
+    btn.textContent = '確認匯入';
+}
+
+// ============================
+// 匯入歷史
+// ============================
+async function loadImportHistory() {
+    try {
+        const snap = await db.collection(BATCH_COLLECTION).orderBy('date', 'desc').limit(20).get();
+        const el = document.getElementById('importHistory');
+        if (snap.empty) { el.innerHTML = '<p class="text-gray-400">尚無匯入記錄</p>'; return; }
+        el.innerHTML = '<div class="space-y-3">' + snap.docs.map(doc => {
+            const d = doc.data();
+            const date = d.date ? new Date(d.date).toLocaleString('zh-TW') : '—';
+            return `<div class="border border-gray-200 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-bold">${d.company || ''} · ${d.period || ''}</span>
+                    <span class="text-xs text-gray-400">${date}</span>
+                </div>
+                <p class="text-xs text-gray-500">${d.fileName || '—'} · ${d.imported || d.totalRows || 0} 筆</p>
+                <p class="text-xs text-gray-400">匯入者：${d.importedBy || '—'}</p>
+            </div>`;
+        }).join('') + '</div>';
+    } catch (e) {
+        document.getElementById('importHistory').innerHTML = '<p class="text-red-400">載入失敗</p>';
+    }
+}
+
+// ============================
+// 白名單管理
+// ============================
+async function loadWhitelist() {
+    try {
+        const snap = await db.collection(WHITELIST_COLLECTION).get();
+        const el = document.getElementById('whitelistTable');
+        if (snap.empty) { el.innerHTML = '<p class="text-gray-400">白名單為空</p>'; return; }
+        el.innerHTML = '<div class="space-y-2">' + snap.docs.map(doc => {
+            const d = doc.data();
+            const roleBadge = d.role === 'admin'
+                ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600">管理員</span>'
+                : d.role === 'editor'
+                    ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">編輯者</span>'
+                    : '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">檢視者</span>';
+            return `<div class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 border border-gray-100">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm">${d.email}</span>
+                    ${roleBadge}
+                </div>
+                ${d.email !== currentUser?.email ? `<button onclick="removeWhitelistUser('${d.email}')" class="text-xs text-red-500 hover:text-red-700">移除</button>` : '<span class="text-xs text-gray-300">（自己）</span>'}
+            </div>`;
+        }).join('') + '</div>';
+    } catch (e) {
+        document.getElementById('whitelistTable').innerHTML = '<p class="text-red-400">載入失敗</p>';
+    }
+}
+
+async function addWhitelistUser() {
+    const email = document.getElementById('newEmailInput').value.trim();
+    const role = document.getElementById('newRoleSelect').value;
+    if (!email) { alert('請輸入 Email'); return; }
+    try {
+        await db.collection(WHITELIST_COLLECTION).doc(email).set({
+            email, role,
+            addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            addedBy: currentUser?.email || ''
+        });
+        document.getElementById('newEmailInput').value = '';
+        loadWhitelist();
+    } catch (e) { alert('新增失敗：' + e.message); }
+}
+
+async function removeWhitelistUser(email) {
+    if (!confirm(`確定要移除 ${email}？`)) return;
+    try { await db.collection(WHITELIST_COLLECTION).doc(email).delete(); loadWhitelist(); }
+    catch (e) { alert('移除失敗：' + e.message); }
+}
+
+// ============================
+// 資料刪除
+// ============================
+async function deleteBatchData() {
+    const company = document.getElementById('deleteCompany').value;
+    const period = document.getElementById('deletePeriod').value;
+    if (!company && !period) { alert('請至少選擇公司或期間'); return; }
+    const desc = [company, period].filter(Boolean).join(' · ');
+    if (!confirm(`確定要刪除「${desc}」的所有資料？此操作無法復原！`)) return;
+    const statusEl = document.getElementById('deleteStatus');
+    statusEl.textContent = '刪除中...';
+    try {
+        let query = db.collection(COLLECTION);
+        if (company) query = query.where('company', '==', company);
+        if (period) query = query.where('period', '==', period);
+        const snap = await query.get();
+        const batchSize = 450;
+        const docs = snap.docs;
+        for (let i = 0; i < docs.length; i += batchSize) {
+            const batch = db.batch();
+            docs.slice(i, i + batchSize).forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+        }
+        statusEl.textContent = `已刪除 ${docs.length} 筆資料`;
+        loadAllData();
+    } catch (e) { statusEl.textContent = '刪除失敗：' + e.message; }
+}
+</script>
+</body>
+</html>
