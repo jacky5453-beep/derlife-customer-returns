@@ -388,9 +388,20 @@ async function googleLogin() {
 
 async function verifyWhitelist(user) {
     const email = user.email;
-    const allDocs = await db.collection(WHITELIST_COLLECTION).limit(1).get();
-    if (allDocs.empty) {
-        // 第一位使用者自動成為管理員
+    // 直接查詢該 email 的文件（只需 get 權限，避免 list 觸發 permission denied）
+    const doc = await db.collection(WHITELIST_COLLECTION).doc(email).get();
+    if (doc.exists) {
+        showApp(user, doc.data().role === 'admin');
+        return;
+    }
+    // 用 __config__ 哨兵文件判斷是否為第一位使用者（get 單一已知路徑，不需 list）
+    const configDoc = await db.collection(WHITELIST_COLLECTION).doc('__config__').get();
+    if (!configDoc.exists) {
+        // 系統尚未初始化，第一位使用者自動成為管理員
+        await db.collection(WHITELIST_COLLECTION).doc('__config__').set({
+            initializedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            initializedBy: email
+        });
         await db.collection(WHITELIST_COLLECTION).doc(email).set({
             email, role: 'admin',
             addedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -399,16 +410,12 @@ async function verifyWhitelist(user) {
         showApp(user, true);
         return;
     }
-    const doc = await db.collection(WHITELIST_COLLECTION).doc(email).get();
-    if (!doc.exists) {
-        await auth.signOut();
-        document.getElementById('loginError').textContent = '您的帳號未被授權使用此系統，請聯繫管理員。';
-        document.getElementById('loginError').classList.remove('hidden');
-        document.getElementById('loginBtn').disabled = false;
-        document.getElementById('loginLoading').classList.add('hidden');
-        return;
-    }
-    showApp(user, doc.data().role === 'admin');
+    // 已初始化但不在白名單
+    await auth.signOut();
+    document.getElementById('loginError').textContent = '您的帳號未被授權使用此系統，請聯繫管理員。';
+    document.getElementById('loginError').classList.remove('hidden');
+    document.getElementById('loginBtn').disabled = false;
+    document.getElementById('loginLoading').classList.add('hidden');
 }
 
 function showApp(user, admin) {
