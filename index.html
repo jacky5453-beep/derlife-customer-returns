@@ -134,6 +134,31 @@
 
         <!-- ==================== 儀表板頁籤 ==================== -->
         <div id="tab-dashboard" class="tab-content max-w-7xl mx-auto px-4 pb-8">
+            <!-- 年度／月度營業額總覽（全期間，僅受公司篩選影響）-->
+            <div id="revenueOverviewSection" class="mb-6 hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <!-- 年度卡片 -->
+                    <div class="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">📅 年度營業額</h3>
+                            <span class="text-[10px] text-gray-400">不受年月篩選影響</span>
+                        </div>
+                        <div id="yearlyCards" class="grid grid-cols-2 gap-3"></div>
+                    </div>
+                    <!-- 月度長條圖 -->
+                    <div class="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">📊 月度營業額（全期間）</h3>
+                            <div class="flex items-center gap-2 text-[10px] text-gray-400">
+                                <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#FFAA00"></span>本月</span>
+                                <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#C3F000"></span>本年度</span>
+                                <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:rgba(107,140,0,0.6)"></span>歷史</span>
+                            </div>
+                        </div>
+                        <div class="chart-container" style="height:260px"><canvas id="revenueMonthlyChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
             <!-- KPI -->
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6" id="kpiArea"></div>
             <!-- 圖表第一排：前20大客戶 + 銷售分布 -->
@@ -629,6 +654,7 @@ function fmtN(n) { return '$' + Math.round(n || 0).toLocaleString(); }
 let monthlyTrendChart = null;
 
 function renderDashboard() {
+    renderRevenueOverview();
     renderKPI();
     renderTopChart();
     renderDistChart();
@@ -636,6 +662,130 @@ function renderDashboard() {
     renderUnpaidChart();
     renderMonthlyTrend();
     renderCompare();
+}
+
+// ============================
+// 年度／月度營業額總覽（全期間，僅受公司篩選影響）
+// ============================
+let revenueMonthlyChart = null;
+
+function renderRevenueOverview() {
+    const section = document.getElementById('revenueOverviewSection');
+    const compFilter = document.getElementById('filterCompany').value;
+    const baseData = allData.filter(d => compFilter === 'all' || d.company === compFilter);
+
+    if (baseData.length === 0) {
+        section.classList.add('hidden');
+        if (revenueMonthlyChart) { revenueMonthlyChart.destroy(); revenueMonthlyChart = null; }
+        return;
+    }
+    section.classList.remove('hidden');
+
+    // 依年度／月度聚合
+    const yearly = {};
+    const monthly = {};
+    baseData.forEach(d => {
+        const df = d.dateFrom || '';
+        if (!df) return;
+        const y = df.substring(0, 4);
+        const ym = df.substring(0, 7);
+        if (!yearly[y]) yearly[y] = { 銷貨金額: 0, 退貨金額: 0, 未清金額: 0 };
+        yearly[y].銷貨金額 += (d.銷貨金額 || 0);
+        yearly[y].退貨金額 += (d.退貨金額 || 0);
+        yearly[y].未清金額 += (d.未清金額 || 0);
+        if (!monthly[ym]) monthly[ym] = { 銷貨金額: 0, 退貨金額: 0 };
+        monthly[ym].銷貨金額 += (d.銷貨金額 || 0);
+        monthly[ym].退貨金額 += (d.退貨金額 || 0);
+    });
+
+    // 年度卡片
+    const now = new Date();
+    const currentYear = now.getFullYear().toString();
+    const currentMonth = now.getMonth() + 1;
+    const sortedYears = Object.keys(yearly).sort((a, b) => b.localeCompare(a));
+    const cardsHtml = sortedYears.map(y => {
+        const g = yearly[y];
+        const retRate = g.銷貨金額 > 0 ? (g.退貨金額 / g.銷貨金額 * 100) : 0;
+        const isCurrent = y === currentYear;
+        return `<button onclick="filterByYear('${y}')" class="text-left rounded-lg p-3 transition hover:shadow-md ${isCurrent ? 'bg-brand-dark' : 'bg-gray-50 border border-gray-100 hover:border-brand'}">
+            <p class="text-xs font-bold ${isCurrent ? 'text-brand' : 'text-gray-500'} mb-1">${y} 年${isCurrent ? '（本年度）' : ''}</p>
+            <p class="text-base md:text-lg font-bold font-mono ${isCurrent ? 'text-white' : 'text-gray-800'}">${fmtN(g.銷貨金額)}</p>
+            <p class="text-[10px] mt-1 ${isCurrent ? 'text-gray-300' : 'text-gray-400'}">退貨率 ${retRate.toFixed(1)}%</p>
+            <p class="text-[10px] mt-0.5 ${g.未清金額 > 0 ? (isCurrent ? 'text-amber-300' : 'text-amber-600') : (isCurrent ? 'text-green-300' : 'text-green-600')}">${g.未清金額 > 0 ? '未清 ' + fmtN(g.未清金額) : '✓ 全清'}</p>
+        </button>`;
+    }).join('');
+    document.getElementById('yearlyCards').innerHTML = cardsHtml || '<p class="text-xs text-gray-400">尚無資料</p>';
+
+    // 月度長條圖
+    const sortedMonths = Object.keys(monthly).sort();
+    const labels = sortedMonths.map(ym => {
+        const [yy, mm] = ym.split('-');
+        return `${yy.slice(2)}/${parseInt(mm)}`;
+    });
+    const vals = sortedMonths.map(ym => monthly[ym].銷貨金額);
+    const colors = sortedMonths.map(ym => {
+        const [y, m] = ym.split('-');
+        if (y === currentYear && parseInt(m) === currentMonth) return '#FFAA00';
+        if (y === currentYear) return '#C3F000';
+        return 'rgba(107,140,0,0.6)';
+    });
+
+    const cfg = {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '銷貨金額', data: vals, backgroundColor: colors, borderRadius: 3 }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            onClick: (evt, els) => {
+                if (!els.length) return;
+                const ym = sortedMonths[els[0].index];
+                if (ym) filterByMonth(ym);
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const ym = sortedMonths[ctx.dataIndex];
+                            const g = monthly[ym];
+                            const r = g.銷貨金額 > 0 ? (g.退貨金額 / g.銷貨金額 * 100).toFixed(1) : '0';
+                            return [`銷貨：${fmtN(g.銷貨金額)}`, `退貨：${fmtN(g.退貨金額)}（${r}%）`, '點擊可篩選此月份'];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { font: { size: 9 }, maxRotation: 60, minRotation: 0, autoSkip: true, maxTicksLimit: 24 }, grid: { display: false } },
+                y: { ticks: { callback: v => fmtN(v), font: { size: 9 } }, grid: { color: 'rgba(0,0,0,0.04)' } }
+            }
+        }
+    };
+
+    if (revenueMonthlyChart) {
+        revenueMonthlyChart.data = cfg.data;
+        revenueMonthlyChart.options = cfg.options;
+        revenueMonthlyChart.update();
+    } else {
+        revenueMonthlyChart = new Chart(document.getElementById('revenueMonthlyChart'), cfg);
+    }
+}
+
+// 點年度卡片：篩選該年度
+function filterByYear(year) {
+    document.getElementById('filterYear').value = year;
+    document.getElementById('filterMonth').value = 'all';
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    onYearMonthChange();
+}
+
+// 點月度長條：篩選該年月
+function filterByMonth(ym) {
+    const [y, m] = ym.split('-');
+    document.getElementById('filterYear').value = y;
+    document.getElementById('filterMonth').value = m;
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    onYearMonthChange();
 }
 
 function renderKPI() {
